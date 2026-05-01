@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2048</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  /* ── Reset & Variables ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d0d0f;
+    --surface:   #16161a;
+    --border:    #2a2a32;
+    --text:      #e8e4d9;
+    --muted:     #555566;
+    --accent:    #f5a623;
+    --glow:      rgba(245,166,35,0.35);
+
+    /* tile colours */
+    --t0:    #1c1c22;
+    --t2:    #2a2d3e; --t2f:    #8899cc;
+    --t4:    #1e3a2f; --t4f:    #5ecf8a;
+    --t8:    #3d2800; --t8f:    #f5a623;
+    --t16:   #4a1f00; --t16f:   #ff8c00;
+    --t32:   #5c1200; --t32f:   #ff5722;
+    --t64:   #6b0000; --t64f:   #ff3d00;
+    --t128:  #004d5c; --t128f:  #00e5ff;
+    --t256:  #003d4d; --t256f:  #40c4ff;
+    --t512:  #002233; --t512f:  #80d8ff;
+    --t1024: #1a0040; --t1024f: #b388ff;
+    --t2048: #2a0040; --t2048f: #ea80fc;
+    --tbig:  #1a001a; --tbigf:  #ff80ab;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* animated scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* subtle vignette */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 99;
+  }
+
+  /* ── Header ────────────────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    width: min(440px, 94vw);
+    padding-bottom: 16px;
+    animation: fadeDown 0.5s ease both;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: clamp(2.4rem, 10vw, 3.6rem);
+    color: var(--accent);
+    text-shadow: 0 0 24px var(--glow), 0 0 60px var(--glow);
+    letter-spacing: 0.06em;
+    line-height: 1;
+  }
+
+  .scores {
+    display: flex;
+    gap: 10px;
+  }
+
+  .score-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    text-align: center;
+    min-width: 80px;
+  }
+
+  .score-box label {
+    display: block;
+    font-size: 0.6rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    margin-bottom: 3px;
+  }
+
+  .score-box span {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--accent);
+    transition: transform 0.15s;
+  }
+
+  .score-box span.bump {
+    animation: scoreBump 0.25s ease;
+  }
+
+  /* ── Controls row ──────────────────────────────────────────────────── */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: min(440px, 94vw);
+    padding-bottom: 12px;
+    animation: fadeDown 0.55s ease both;
+  }
+
+  .hint {
+    font-size: 0.68rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  .btn-new {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--bg);
+    background: var(--accent);
+    border: none;
+    border-radius: 4px;
+    padding: 7px 16px;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+    box-shadow: 0 0 14px var(--glow);
+  }
+
+  .btn-new:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-new:active { transform: translateY(0); }
+
+  /* ── Grid ──────────────────────────────────────────────────────────── */
+  .grid-wrap {
+    position: relative;
+    width: min(440px, 94vw);
+    aspect-ratio: 1 / 1;
+    animation: fadeUp 0.5s ease both;
+  }
+
+  .grid-bg {
+    position: absolute; inset: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow:
+      0 0 0 1px var(--border),
+      0 8px 40px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+
+  .cell-bg {
+    background: var(--t0);
+    border-radius: 5px;
+  }
+
+  /* tile layer — absolutely positioned for animation */
+  .tile-layer {
+    position: absolute; inset: 10px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  .tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    transition: background 0.1s, box-shadow 0.1s;
+    animation: tileIn 0.12s ease both;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* glint pseudo-element */
+  .tile::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -60%;
+    width: 40%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent);
+    transform: skewX(-20deg);
+  }
+
+  .tile.new { animation: tileAppear 0.2s ease both; }
+  .tile.merged { animation: tileMerge 0.18s ease both; }
+
+  /* tile font sizing */
+  .tile[data-v="2"],
+  .tile[data-v="4"],
+  .tile[data-v="8"]      { font-size: clamp(1.4rem, 5vw, 2rem); }
+  .tile[data-v="16"],
+  .tile[data-v="32"],
+  .tile[data-v="64"]     { font-size: clamp(1.2rem, 4.5vw, 1.7rem); }
+  .tile[data-v="128"],
+  .tile[data-v="256"],
+  .tile[data-v="512"]    { font-size: clamp(1rem, 4vw, 1.4rem); }
+  .tile[data-v="1024"],
+  .tile[data-v="2048"]   { font-size: clamp(0.85rem, 3.5vw, 1.15rem); }
+  .tile[data-big]        { font-size: clamp(0.72rem, 3vw, 0.95rem); }
+
+  /* ── Tile colour map ───────────────────────────────────────────────── */
+  .tile[data-v="0"]    { background: var(--t0); }
+  .tile[data-v="2"]    { background: var(--t2);    color: var(--t2f);    box-shadow: 0 0 10px rgba(136,153,204,0.25); }
+  .tile[data-v="4"]    { background: var(--t4);    color: var(--t4f);    box-shadow: 0 0 10px rgba(94,207,138,0.25); }
+  .tile[data-v="8"]    { background: var(--t8);    color: var(--t8f);    box-shadow: 0 0 14px rgba(245,166,35,0.4); }
+  .tile[data-v="16"]   { background: var(--t16);   color: var(--t16f);   box-shadow: 0 0 16px rgba(255,140,0,0.4); }
+  .tile[data-v="32"]   { background: var(--t32);   color: var(--t32f);   box-shadow: 0 0 18px rgba(255,87,34,0.45); }
+  .tile[data-v="64"]   { background: var(--t64);   color: var(--t64f);   box-shadow: 0 0 20px rgba(255,61,0,0.5); }
+  .tile[data-v="128"]  { background: var(--t128);  color: var(--t128f);  box-shadow: 0 0 22px rgba(0,229,255,0.45); }
+  .tile[data-v="256"]  { background: var(--t256);  color: var(--t256f);  box-shadow: 0 0 24px rgba(64,196,255,0.5); }
+  .tile[data-v="512"]  { background: var(--t512);  color: var(--t512f);  box-shadow: 0 0 28px rgba(128,216,255,0.55); }
+  .tile[data-v="1024"] { background: var(--t1024); color: var(--t1024f); box-shadow: 0 0 30px rgba(179,136,255,0.6); }
+  .tile[data-v="2048"] {
+    background: var(--t2048); color: var(--t2048f);
+    box-shadow: 0 0 40px rgba(234,128,252,0.7), 0 0 80px rgba(234,128,252,0.3);
+    animation: pulse2048 1.5s ease-in-out infinite, tileMerge 0.18s ease both;
+  }
+  .tile[data-big]      { background: var(--tbig);  color: var(--tbigf);  box-shadow: 0 0 40px rgba(255,128,171,0.7); }
+
+  /* ── Overlay (win / game over) ─────────────────────────────────────── */
+  .overlay {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(13,13,15,0.88);
+    border-radius: 10px;
+    backdrop-filter: blur(4px);
+    z-index: 10;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .overlay.visible { display: flex; }
+
+  .overlay-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.4rem, 6vw, 2rem);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+  }
+
+  .overlay-title.win  { color: var(--t2048f); text-shadow: 0 0 30px rgba(234,128,252,0.8); }
+  .overlay-title.over { color: var(--t64f);   text-shadow: 0 0 30px rgba(255,61,0,0.7); }
+
+  .overlay p {
+    font-size: 0.78rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-align: center;
+    padding: 0 20px;
+  }
+
+  .overlay-btns { display: flex; gap: 10px; }
+
+  .btn-ov {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    border: none;
+    border-radius: 4px;
+    padding: 9px 20px;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+  }
+
+  .btn-ov:hover  { filter: brightness(1.2); transform: translateY(-1px); }
+  .btn-ov:active { transform: translateY(0); }
+
+  .btn-restart { background: var(--t64f); color: #fff; }
+  .btn-continue { background: var(--t2048f); color: #1a001a; }
+
+  /* ── Footer hint ───────────────────────────────────────────────────── */
+  footer {
+    margin-top: 14px;
+    font-size: 0.62rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    animation: fadeUp 0.7s ease both;
+  }
+
+  /* ── Keyframes ─────────────────────────────────────────────────────── */
+  @keyframes fadeDown {
+    from { opacity:0; transform: translateY(-12px); }
+    to   { opacity:1; transform: none; }
+  }
+
+  @keyframes fadeUp {
+    from { opacity:0; transform: translateY(12px); }
+    to   { opacity:1; transform: none; }
+  }
+
+  @keyframes fadeIn {
+    from { opacity:0; }
+    to   { opacity:1; }
+  }
+
+  @keyframes tileIn {
+    from { opacity:0; transform: scale(0.85); }
+    to   { opacity:1; transform: scale(1); }
+  }
+
+  @keyframes tileAppear {
+    0%   { transform: scale(0); opacity:0; }
+    70%  { transform: scale(1.08); }
+    100% { transform: scale(1); opacity:1; }
+  }
+
+  @keyframes tileMerge {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes scoreBump {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.3); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes pulse2048 {
+    0%, 100% { box-shadow: 0 0 40px rgba(234,128,252,0.7), 0 0 80px rgba(234,128,252,0.3); }
+    50%       { box-shadow: 0 0 60px rgba(234,128,252,0.9), 0 0 120px rgba(234,128,252,0.5); }
+  }
+
+  /* ── Swipe touch support ───────────────────────────────────────────── */
+  .grid-wrap { touch-action: none; user-select: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>2048</h1>
+  <div class="scores">
+    <div class="score-box">
+      <label>SCORE</label>
+      <span id="score">0</span>
+    </div>
+    <div class="score-box">
+      <label>BEST</label>
+      <span id="best">0</span>
+    </div>
+  </div>
+</header>
+
+<div class="controls">
+  <span class="hint">← → ↑ ↓  or  A S W D</span>
+  <button class="btn-new" id="btnNew">NEW GAME</button>
+</div>
+
+<div class="grid-wrap" id="gridWrap">
+  <!-- static background cells -->
+  <div class="grid-bg" id="gridBg">
+    <!-- 16 empty cells injected by JS -->
+  </div>
+
+  <!-- animated tile layer -->
+  <div class="tile-layer" id="tileLayer"></div>
+
+  <!-- win overlay -->
+  <div class="overlay" id="overlayWin">
+    <div class="overlay-title win">YOU WIN!</div>
+    <p>You reached 2048.<br>Keep going for a higher score?</p>
+    <div class="overlay-btns">
+      <button class="btn-ov btn-continue" id="btnContinue">KEEP GOING</button>
+      <button class="btn-ov btn-restart"  id="btnRestartW">RESTART</button>
+    </div>
+  </div>
+
+  <!-- game-over overlay -->
+  <div class="overlay" id="overlayOver">
+    <div class="overlay-title over">GAME OVER</div>
+    <p>No moves left.<br>Better luck next time!</p>
+    <div class="overlay-btns">
+      <button class="btn-ov btn-restart" id="btnRestartO">TRY AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<footer>JOIN TILES — REACH&nbsp;2048</footer>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let state = {
+  board: [],
+  score: 0,
+  best:  parseInt(localStorage.getItem('best2048') || '0'),
+  status: 'playing',   // 'playing' | 'won' | 'over'
+  wonAck: false,       // player chose to keep going
+  busy: false,
+};
+
+// ── DOM refs ───────────────────────────────────────────────────────────────
+const tileLayer  = document.getElementById('tileLayer');
+const scoreEl    = document.getElementById('score');
+const bestEl     = document.getElementById('best');
+const overlayWin = document.getElementById('overlayWin');
+const overlayOvr = document.getElementById('overlayOver');
+const gridBg     = document.getElementById('gridBg');
+
+// ── Init background cells ─────────────────────────────────────────────────
+for (let i = 0; i < 16; i++) {
+  const d = document.createElement('div');
+  d.className = 'cell-bg';
+  gridBg.appendChild(d);
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function render(board, prevBoard, mergedCells) {
+  tileLayer.innerHTML = '';
+
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      const v = board[r][c];
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.dataset.v = v <= 2048 ? v : 'big';
+      if (v > 2048) tile.dataset.big = true;
+      tile.textContent = v || '';
+
+      // classify for animation
+      const prev = prevBoard ? prevBoard[r][c] : v;
+      if (mergedCells && mergedCells[r][c]) {
+        tile.classList.add('merged');
+      } else if (prev === 0 && v !== 0) {
+        tile.classList.add('new');
+      }
+
+      tileLayer.appendChild(tile);
+    }
+  }
+}
+
+function updateScore(score, best) {
+  const prevScore = parseInt(scoreEl.textContent) || 0;
+  scoreEl.textContent = score;
+  bestEl.textContent  = best;
+  if (score > prevScore) {
+    scoreEl.classList.remove('bump');
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add('bump');
+  }
+  if (best > 0) localStorage.setItem('best2048', best);
+}
+
+function showOverlays(status, wonAck) {
+  overlayWin.classList.remove('visible');
+  overlayOvr.classList.remove('visible');
+  if (status === 'won' && !wonAck) overlayWin.classList.add('visible');
+  if (status === 'over')            overlayOvr.classList.add('visible');
+}
+
+// ── API calls ──────────────────────────────────────────────────────────────
+async function apiNew() {
+  const res  = await fetch('/api/new', { method: 'POST' });
+  const data = await res.json();
+  state.board  = data.board;
+  state.score  = 0;
+  state.best   = Math.max(state.best, 0);
+  state.status = 'playing';
+  state.wonAck = false;
+  updateScore(0, state.best);
+  render(data.board, null, null);
+  showOverlays('playing', false);
+}
+
+async function apiMove(direction) {
+  if (state.busy) return;
+  if (state.status === 'over') return;
+  if (state.status === 'won' && !state.wonAck) return;
+
+  state.busy = true;
+  try {
+    const res  = await fetch('/api/move', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        board:     state.board,
+        score:     state.score,
+        best:      state.best,
+        direction,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.moved) {
+      const prev = state.board.map(r => [...r]);
+      state.board  = data.board;
+      state.score  = data.score;
+      state.best   = data.best;
+      state.status = data.status;
+      updateScore(data.score, data.best);
+      render(data.board, prev, null);
+      showOverlays(data.status, state.wonAck);
+    }
+  } finally {
+    state.busy = false;
+  }
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────────────
+const KEY_DIR = {
+  ArrowUp: 'U', KeyW: 'U', w: 'U',
+  ArrowDown: 'D', KeyS: 'D', s: 'D',
+  ArrowLeft: 'L', KeyA: 'L', a: 'L',
+  ArrowRight: 'R', KeyD: 'R', d: 'R',
+};
+
+document.addEventListener('keydown', e => {
+  const dir = KEY_DIR[e.code] || KEY_DIR[e.key];
+  if (dir) { e.preventDefault(); apiMove(dir); }
+});
+
+// ── Touch / swipe ──────────────────────────────────────────────────────────
+let touchStart = null;
+const gw = document.getElementById('gridWrap');
+
+gw.addEventListener('pointerdown', e => {
+  touchStart = { x: e.clientX, y: e.clientY };
+});
+
+gw.addEventListener('pointerup', e => {
+  if (!touchStart) return;
+  const dx = e.clientX - touchStart.x;
+  const dy = e.clientY - touchStart.y;
+  touchStart = null;
+  if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
+  if (Math.abs(dx) > Math.abs(dy))
+    apiMove(dx > 0 ? 'R' : 'L');
+  else
+    apiMove(dy > 0 ? 'D' : 'U');
+});
+
+// ── Buttons ────────────────────────────────────────────────────────────────
+document.getElementById('btnNew').onclick      = apiNew;
+document.getElementById('btnRestartW').onclick = apiNew;
+document.getElementById('btnRestartO').onclick = apiNew;
+document.getElementById('btnContinue').onclick = () => {
+  state.wonAck = true;
+  overlayWin.classList.remove('visible');
+};
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+bestEl.textContent = state.best;
+apiNew();
+</script>
+</body>
+</html>
