@@ -20,7 +20,7 @@ RUN pip install --upgrade pip \
 # ── Stage 2: lean runtime image ────────────────────────────
 FROM python:3.12-slim
 
-LABEL maintainer="you@example.com" \
+LABEL maintainer="Nithin Kumar" \
       description="2048 — Flask web game" \
       version="2.0"
 
