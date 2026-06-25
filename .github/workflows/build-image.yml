@@ -26,4 +26,16 @@ jobs:
           context: .
           push: true
           tags: nithinkumar99/2048-game:v1.0.1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: run container
+        run: |
+          docker run -d -p 80:80 nithinkumar99/2048-game:v1.0.1
+        
           
